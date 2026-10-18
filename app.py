@@ -19,6 +19,7 @@ import json
 import warnings
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
 warnings.filterwarnings("ignore")
 
@@ -221,10 +222,12 @@ def cached_load_data():
     try:
         df, report = load_and_validate()
         return df, report, None
-    except FileNotFoundError as e:
-        return None, None, str(e)
     except Exception as e:
-        return None, None, str(e)
+        import traceback
+        tb_lines = traceback.format_exception(type(e), e, e.__traceback__)
+        tb_summary = "".join(tb_lines[-4:]) if len(tb_lines) > 4 else "".join(tb_lines)
+        error_msg = f"[{type(e).__name__}] {e}\n\nTraceback:\n{tb_summary}"
+        return None, None, error_msg
 
 
 @st.cache_resource(show_spinner=False)
@@ -304,10 +307,10 @@ def apply_theme(fig, title=None):
 # Sidebar navigation
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render_sidebar():
+def render_sidebar(data_loaded: bool = True, data_error: Optional[str] = None):
     with st.sidebar:
         st.markdown("""
-        <div style='text-align:center; padding: 1rem 0 1.5rem;'>
+        <div style='text-align:center; padding: 1rem 0 1rem;'>
             <div style='font-size:2.5rem'>⚙️</div>
             <div style='font-size:1.05rem; font-weight:700; color:#e6edf3; margin-top:0.5rem;'>
                 PredictiveMaint.AI
@@ -317,6 +320,23 @@ def render_sidebar():
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+        if data_loaded:
+            st.markdown(
+                "<div style='text-align:center; margin-bottom:0.8rem;'>"
+                "<span style='background:#0d2016; color:#3fb950; border:1px solid #238636; "
+                "border-radius:12px; padding:0.2rem 0.6rem; font-size:0.75rem; font-weight:600;'>"
+                "🟢 Dataset Ready</span></div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                "<div style='text-align:center; margin-bottom:0.8rem;'>"
+                "<span style='background:#2d1116; color:#f85149; border:1px solid #da3633; "
+                "border-radius:12px; padding:0.2rem 0.6rem; font-size:0.75rem; font-weight:600;'>"
+                "🔴 Dataset Not Loaded</span></div>",
+                unsafe_allow_html=True,
+            )
 
         st.markdown("---")
         page = st.radio(
@@ -513,7 +533,7 @@ def page_overview(df, report, registry, selected_model, threshold, data_error=No
 # PAGE B: Exploratory Data Analysis
 # ─────────────────────────────────────────────────────────────────────────────
 
-def page_eda(df):
+def page_eda(df, data_error=None):
     st.markdown("""
     <div class='page-header'>
         <h1>📊 Exploratory Data Analysis</h1>
@@ -522,7 +542,10 @@ def page_eda(df):
     """, unsafe_allow_html=True)
 
     if df is None:
-        st.error("Dataset not loaded.")
+        st.error("⚠️ Dataset not loaded.")
+        if data_error:
+            with st.expander("🔍 Dataset Loading Diagnostics & Error Details", expanded=True):
+                st.code(data_error, language="text")
         return
 
     # ── Dataset summary ───────────────────────────────────────────────────────
@@ -1095,7 +1118,7 @@ def page_batch(selected_model, threshold):
 # PAGE F: Model Explainability
 # ─────────────────────────────────────────────────────────────────────────────
 
-def page_explainability(df, selected_model):
+def page_explainability(df, selected_model, data_error=None):
     st.markdown("""
     <div class='page-header'>
         <h1>🧠 Model Explainability</h1>
@@ -1330,17 +1353,20 @@ def page_about():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
-    page, selected_model, threshold = render_sidebar()
-
     # Load data (cached)
     df, report, data_error = cached_load_data()
     registry = cached_load_registry()
+
+    page, selected_model, threshold = render_sidebar(
+        data_loaded=(df is not None),
+        data_error=data_error,
+    )
 
     # Route pages
     if page == "🏠 Executive Overview":
         page_overview(df, report, registry, selected_model, threshold, data_error=data_error)
     elif page == "📊 Exploratory Data Analysis":
-        page_eda(df)
+        page_eda(df, data_error=data_error)
     elif page == "🔮 Predict Machine Failure":
         page_predict(selected_model, threshold)
     elif page == "📈 Model Evaluation":
@@ -1348,7 +1374,7 @@ def main():
     elif page == "📦 Batch Prediction":
         page_batch(selected_model, threshold)
     elif page == "🧠 Model Explainability":
-        page_explainability(df, selected_model)
+        page_explainability(df, selected_model, data_error=data_error)
     elif page == "ℹ️ About the Project":
         page_about()
 

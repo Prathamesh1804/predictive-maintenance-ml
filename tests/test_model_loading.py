@@ -113,5 +113,20 @@ def test_dataset_loading_and_validation():
     df = load_raw_data()
     assert isinstance(df, pd.DataFrame)
     assert len(df) == 10000, f"Expected 10,000 rows, got {len(df)}"
+    assert "UDI" in df.columns, "BOM issue: 'UDI' column missing from dataframe"
+    assert "\ufeffUDI" not in df.columns, "BOM character was not stripped from column names"
     report = validate_dataset(df)
     assert report["valid"] is True, f"Validation failed: {report['errors']}"
+
+
+def test_dashboard_cached_load_data():
+    """Verify that the dashboard's exact loader function (app.cached_load_data) succeeds."""
+    import app
+    df, report, data_error = app.cached_load_data()
+    assert df is not None, f"Dashboard cached_load_data failed with error: {data_error}"
+    assert data_error is None, f"Expected no data_error, got: {data_error}"
+    assert len(df) == 10000
+    assert report is not None
+    assert report["valid"] is True
+    assert "UDI" in df.columns
+    assert "Machine failure" in df.columns

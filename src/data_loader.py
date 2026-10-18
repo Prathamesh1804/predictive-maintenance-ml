@@ -45,20 +45,57 @@ EXPECTED_ROWS = 10_000
 # Verified official UCI ML Repository download URL
 DATASET_URL = "https://archive.ics.uci.edu/static/public/601/ai4i+2020+predictive+maintenance+dataset.zip"
 
+# Project root derived portably from source file location
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-def download_dataset(raw_dir: Path = RAW_DIR, target_filename: str = "ai4i2020.csv") -> Optional[Path]:
+
+def get_candidate_data_dirs(specified_dir: Optional[Path] = None) -> list[Path]:
+    """
+    Return an ordered list of candidate directories where raw CSVs may reside.
+    Avoids reliance on current working directory while checking all common locations.
+    """
+    candidates = []
+    if specified_dir is not None:
+        candidates.append(Path(specified_dir))
+
+    candidates.extend([
+        PROJECT_ROOT / "data" / "raw",
+        PROJECT_ROOT / "data",
+        RAW_DIR,
+        Path.cwd() / "data" / "raw",
+        Path.cwd() / "data",
+        Path.cwd(),
+    ])
+
+    seen = set()
+    unique = []
+    for c in candidates:
+        try:
+            res = c.resolve()
+            if res not in seen:
+                seen.add(res)
+                unique.append(c)
+        except Exception:
+            if c not in seen:
+                seen.add(c)
+                unique.append(c)
+    return unique
+
+
+def download_dataset(raw_dir: Optional[Path] = None, target_filename: str = "ai4i2020.csv") -> Optional[Path]:
     """
     Attempt to download the official UCI AI4I 2020 dataset and save it to raw_dir.
     Returns Path to the downloaded CSV on success, or None on failure.
     """
+    effective_dir = Path(raw_dir) if raw_dir is not None else (PROJECT_ROOT / "data" / "raw")
     try:
         import urllib.request
         import urllib.error
         import zipfile
         import io
 
-        raw_dir.mkdir(parents=True, exist_ok=True)
-        target_path = raw_dir / target_filename
+        effective_dir.mkdir(parents=True, exist_ok=True)
+        target_path = effective_dir / target_filename
         if target_path.exists() and target_path.stat().st_size > 0:
             return target_path
 
@@ -96,7 +133,7 @@ def download_dataset(raw_dir: Path = RAW_DIR, target_filename: str = "ai4i2020.c
         logger.info("Attempting dataset fetch via ucimlrepo package...")
         dataset = fetch_ucirepo(id=601)
         df = dataset.data.original
-        target_path = raw_dir / target_filename
+        target_path = effective_dir / target_filename
         df.to_csv(target_path, index=False)
         if target_path.exists() and target_path.stat().st_size > 0:
             logger.info("Successfully fetched dataset via ucimlrepo: %s", target_path)
@@ -107,63 +144,88 @@ def download_dataset(raw_dir: Path = RAW_DIR, target_filename: str = "ai4i2020.c
     return None
 
 
-def find_raw_csv(raw_dir: Path = RAW_DIR) -> Optional[Path]:
-    """Scan *raw_dir* for any accepted CSV filename and return its path."""
-    for name in RAW_CSV_CANDIDATES:
-        candidate = raw_dir / name
-        if candidate.exists():
-            return candidate
-    # Also accept any .csv file in the raw directory as a fallback
-    csv_files = list(raw_dir.glob("*.csv"))
-    if csv_files:
-        logger.warning(
-            "No standard filename found; using first CSV found: %s", csv_files[0].name
-        )
-        return csv_files[0]
+def find_raw_csv(raw_dir: Optional[Path] = None) -> Optional[Path]:
+    """Scan candidate directories for any accepted CSV filename and return its path."""
+    search_dirs = get_candidate_data_dirs(raw_dir)
+
+    for d in search_dirs:
+        if not d.exists() or not d.is_dir():
+            continue
+
+        # 1. Search for accepted candidate filenames (exact and case-insensitive)
+        for name in RAW_CSV_CANDIDATES:
+            exact = d / name
+            if exact.exists() and exact.is_file():
+                return exact
+
+            try:
+                for item in d.iterdir():
+                    if item.is_file() and item.name.lower() == name.lower():
+                        return item
+            except Exception:
+                pass
+
+        # 2. Fallback: accept any .csv in candidate directory
+        try:
+            csv_files = [f for f in d.iterdir() if f.is_file() and f.suffix.lower() == ".csv"]
+            if csv_files:
+                logger.warning(
+                    "No standard filename found in %s; using first CSV found: %s", d, csv_files[0].name
+                )
+                return csv_files[0]
+        except Exception:
+            pass
+
     return None
 
 
-def load_raw_data(raw_dir: Path = RAW_DIR, auto_download: bool = True) -> pd.DataFrame:
+def load_raw_data(raw_dir: Optional[Path] = None, auto_download: bool = True) -> pd.DataFrame:
     """
     Load the raw UCI AI4I 2020 dataset CSV.
     Attempts automatic download from UCI if the dataset is missing.
+    Ensures UTF-8 BOM is stripped and headers are normalised.
 
     Raises
     ------
     FileNotFoundError
-        When no CSV is found in *raw_dir* and automatic download fails.
+        When no CSV is found and automatic download fails.
     ValueError
         When the CSV fails column or basic shape validation.
     """
     csv_path = find_raw_csv(raw_dir)
+    effective_dir = Path(raw_dir) if raw_dir is not None else (PROJECT_ROOT / "data" / "raw")
+
     if csv_path is None and auto_download:
-        csv_path = download_dataset(raw_dir)
+        csv_path = download_dataset(effective_dir)
 
     if csv_path is None:
         instructions = (
-            "\n"
-            "=" * 55 + "\n"
-            "  DATASET NOT FOUND - Manual download or git commit required\n"
-            "=" * 55 + "\n"
-            "  The UCI AI4I 2020 dataset was not found in:\n"
-            f"     {raw_dir.resolve()}\n"
+            "DATASET NOT FOUND:\n"
+            f"  Expected location: {effective_dir.resolve() / 'ai4i2020.csv'}\n"
+            "  The raw dataset CSV was not found in any standard project directory,\n"
             "  and automatic download could not be completed.\n\n"
-            "  To resolve this:\n"
-            "  1. Download the dataset from UCI:\n"
-            "     https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset\n"
-            "  2. Extract 'ai4i2020.csv' and place it in:\n"
-            f"     {raw_dir.resolve()}\n"
-            "  3. If deploying to Streamlit Community Cloud, track and commit the file:\n"
-            "     git add -f data/raw/ai4i2020.csv\n"
-            "     git commit -m 'Add AI4I 2020 dataset'\n"
-            "     git push\n"
-            "=" * 55 + "\n"
+            "To fix this in Streamlit Community Cloud:\n"
+            "  1. Ensure 'data/raw/ai4i2020.csv' exists in the repository.\n"
+            "  2. Verify it is tracked in Git with: git status\n"
+            "  3. Commit and push: git push origin main"
         )
         raise FileNotFoundError(instructions)
 
     logger.info("Loading dataset from: %s", csv_path)
-    df = pd.read_csv(csv_path)
-    logger.info("Loaded %d rows × %d columns", *df.shape)
+
+    # Use utf-8-sig to automatically strip UTF-8 Byte Order Mark (\xef\xbb\xbf)
+    try:
+        df = pd.read_csv(csv_path, encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            df = pd.read_csv(csv_path, encoding="utf-8", errors="replace")
+        except Exception:
+            df = pd.read_csv(csv_path, encoding="latin1")
+
+    # Clean BOM and strip whitespace from all column names
+    df.columns = [str(c).replace("\ufeff", "").strip() for c in df.columns]
+
+    logger.info("Loaded %d rows × %d columns from %s", df.shape[0], df.shape[1], csv_path)
     return df
 
 
@@ -175,10 +237,12 @@ def validate_dataset(df: pd.DataFrame) -> dict:
     target distribution. Does NOT raise on warnings — returns them in
     the report so the caller can decide how to handle them.
     """
+    # Clean headers defensive check
+    clean_columns = [str(c).replace("\ufeff", "").strip() for c in df.columns]
     report: dict = {
         "row_count": len(df),
-        "column_count": len(df.columns),
-        "columns_found": list(df.columns),
+        "column_count": len(clean_columns),
+        "columns_found": clean_columns,
         "missing_columns": [],
         "extra_columns": [],
         "missing_values": {},
@@ -189,7 +253,7 @@ def validate_dataset(df: pd.DataFrame) -> dict:
     }
 
     # ── Column checks ─────────────────────────────────────────────────────────
-    found = set(df.columns)
+    found = set(clean_columns)
     missing = EXPECTED_COLUMNS - found
     extra = found - EXPECTED_COLUMNS
     if missing:
@@ -255,7 +319,7 @@ def validate_dataset(df: pd.DataFrame) -> dict:
     return report
 
 
-def load_and_validate(raw_dir: Path = RAW_DIR, auto_download: bool = True) -> tuple[pd.DataFrame, dict]:
+def load_and_validate(raw_dir: Optional[Path] = None, auto_download: bool = True) -> tuple[pd.DataFrame, dict]:
     """Convenience: load the CSV and return (dataframe, validation_report)."""
     df = load_raw_data(raw_dir, auto_download=auto_download)
     report = validate_dataset(df)
