@@ -1,3 +1,12 @@
+# 🚀 Live Demo
+
+**Try PredictiveMaint.AI here:** [Open Predictive Maintenance System](https://predictive-maintenance-ml-jjebzuhtzch5vklpk3i7wr.streamlit.app/)
+
+---
+
+# Predictive Maintenance Intelligence System
+
+A complete, end-to-end machine learning system for industrial machinery failure prediction using the UCI AI4I 2020 Predictive Maintenance Dataset.
 # Predictive Maintenance Intelligence System
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](https://python.org)
