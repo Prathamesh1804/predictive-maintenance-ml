@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Data — never commit raw/processed data
+data/raw/*.csv
+data/processed/
+
+# Trained models
+models/*.joblib
+models/*.pkl
+models/model_registry.json
+
+# Reports / figures (generated — commit only if intentional)
+reports/figures/
+reports/*.png
+reports/*.json
+reports/*.csv
+
+# Environment secrets
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Streamlit cache
+.streamlit/
+
+# pytest
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
