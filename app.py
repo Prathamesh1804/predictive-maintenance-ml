@@ -243,6 +243,13 @@ def cached_load_registry():
 def cached_load_comparison():
     if COMPARISON_FILE.exists():
         return pd.read_csv(COMPARISON_FILE)
+    # Reconstruct from model_registry.json if available
+    registry = cached_load_registry()
+    if registry and "models" in registry:
+        from src.evaluate import build_comparison_table
+        metrics_list = [m["metrics"] for m in registry["models"].values() if "metrics" in m]
+        if metrics_list:
+            return build_comparison_table(metrics_list)
     return None
 
 
@@ -250,6 +257,13 @@ def cached_load_comparison():
 def cached_load_metrics():
     if METRICS_FILE.exists():
         return load_json(METRICS_FILE)
+    registry = cached_load_registry()
+    if registry and "models" in registry:
+        return {
+            "generated_at": registry.get("trained_at"),
+            "best_model": registry.get("best_model"),
+            "models": {name: m.get("metrics", {}) for name, m in registry["models"].items()},
+        }
     return None
 
 
@@ -361,7 +375,7 @@ def render_sidebar():
 # PAGE A: Executive Overview
 # ─────────────────────────────────────────────────────────────────────────────
 
-def page_overview(df, report, registry, selected_model, threshold):
+def page_overview(df, report, registry, selected_model, threshold, data_error=None):
     st.markdown("""
     <div class='page-header'>
         <h1>⚙️ Executive Overview</h1>
@@ -378,7 +392,10 @@ def page_overview(df, report, registry, selected_model, threshold):
     """, unsafe_allow_html=True)
 
     if df is None:
-        st.error("Dataset not loaded. See sidebar for instructions.")
+        st.error("Dataset not loaded.")
+        if data_error:
+            with st.expander("Details & Instructions", expanded=True):
+                st.code(data_error)
         return
 
     # ── KPI row ──────────────────────────────────────────────────────────────
@@ -1102,17 +1119,14 @@ def page_explainability(df, selected_model):
     if selected_model is None:
         selected_model = registry.get("best_model")
 
-    model_info = registry["models"].get(selected_model)
-    if model_info is None:
-        st.error(f"Model '{selected_model}' not in registry.")
+    service = cached_prediction_service(selected_model)
+    if not service.is_ready:
+        st.error(
+            f"Could not load model '{selected_model}': {service.load_error or 'Artifact missing.'}"
+        )
         return
 
-    import joblib
-    try:
-        pipeline = joblib.load(model_info["path"])
-    except Exception as exc:
-        st.error(f"Could not load model: {exc}")
-        return
+    pipeline = service.pipeline
 
     st.success(f"Explaining: **{selected_model}**")
 
@@ -1324,7 +1338,7 @@ def main():
 
     # Route pages
     if page == "🏠 Executive Overview":
-        page_overview(df, report, registry, selected_model, threshold)
+        page_overview(df, report, registry, selected_model, threshold, data_error=data_error)
     elif page == "📊 Exploratory Data Analysis":
         page_eda(df)
     elif page == "🔮 Predict Machine Failure":

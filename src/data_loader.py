@@ -42,6 +42,70 @@ EXPECTED_COLUMNS = {
 
 EXPECTED_ROWS = 10_000
 
+# Verified official UCI ML Repository download URL
+DATASET_URL = "https://archive.ics.uci.edu/static/public/601/ai4i+2020+predictive+maintenance+dataset.zip"
+
+
+def download_dataset(raw_dir: Path = RAW_DIR, target_filename: str = "ai4i2020.csv") -> Optional[Path]:
+    """
+    Attempt to download the official UCI AI4I 2020 dataset and save it to raw_dir.
+    Returns Path to the downloaded CSV on success, or None on failure.
+    """
+    try:
+        import urllib.request
+        import urllib.error
+        import zipfile
+        import io
+
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        target_path = raw_dir / target_filename
+        if target_path.exists() and target_path.stat().st_size > 0:
+            return target_path
+
+        logger.info("Attempting automatic download from UCI ML Repository: %s", DATASET_URL)
+        req = urllib.request.Request(
+            DATASET_URL,
+            headers={"User-Agent": "Mozilla/5.0 (PredictiveMaintenanceML/1.0)"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as response:
+            content = response.read()
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
+                if not csv_names:
+                    logger.warning("No CSV file found inside the downloaded ZIP archive.")
+                    return None
+                selected_name = next((n for n in csv_names if "ai4i" in n.lower()), csv_names[0])
+                csv_data = zf.read(selected_name)
+                with open(target_path, "wb") as f:
+                    f.write(csv_data)
+        except zipfile.BadZipFile:
+            with open(target_path, "wb") as f:
+                f.write(content)
+
+        if target_path.exists() and target_path.stat().st_size > 0:
+            logger.info("Successfully downloaded and saved dataset to: %s", target_path)
+            return target_path
+    except Exception as exc:
+        logger.warning("Automatic dataset download from UCI failed: %s", exc)
+
+    # Optional ucimlrepo package fallback
+    try:
+        from ucimlrepo import fetch_ucirepo
+        logger.info("Attempting dataset fetch via ucimlrepo package...")
+        dataset = fetch_ucirepo(id=601)
+        df = dataset.data.original
+        target_path = raw_dir / target_filename
+        df.to_csv(target_path, index=False)
+        if target_path.exists() and target_path.stat().st_size > 0:
+            logger.info("Successfully fetched dataset via ucimlrepo: %s", target_path)
+            return target_path
+    except Exception as exc:
+        logger.debug("ucimlrepo fetch unavailable or failed: %s", exc)
+
+    return None
+
 
 def find_raw_csv(raw_dir: Path = RAW_DIR) -> Optional[Path]:
     """Scan *raw_dir* for any accepted CSV filename and return its path."""
@@ -59,29 +123,40 @@ def find_raw_csv(raw_dir: Path = RAW_DIR) -> Optional[Path]:
     return None
 
 
-def load_raw_data(raw_dir: Path = RAW_DIR) -> pd.DataFrame:
+def load_raw_data(raw_dir: Path = RAW_DIR, auto_download: bool = True) -> pd.DataFrame:
     """
     Load the raw UCI AI4I 2020 dataset CSV.
+    Attempts automatic download from UCI if the dataset is missing.
 
     Raises
     ------
     FileNotFoundError
-        When no CSV is found in *raw_dir*.
+        When no CSV is found in *raw_dir* and automatic download fails.
     ValueError
         When the CSV fails column or basic shape validation.
     """
     csv_path = find_raw_csv(raw_dir)
+    if csv_path is None and auto_download:
+        csv_path = download_dataset(raw_dir)
+
     if csv_path is None:
         instructions = (
             "\n"
             "=" * 55 + "\n"
-            "  DATASET NOT FOUND - Manual download required\n"
+            "  DATASET NOT FOUND - Manual download or git commit required\n"
             "=" * 55 + "\n"
-            "  1. Open: https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset\n"
-            "  2. Click 'Download' to get the ZIP archive.\n"
-            "  3. Extract and place 'ai4i2020.csv' in:\n"
+            "  The UCI AI4I 2020 dataset was not found in:\n"
             f"     {raw_dir.resolve()}\n"
-            "  4. Re-run this script.\n"
+            "  and automatic download could not be completed.\n\n"
+            "  To resolve this:\n"
+            "  1. Download the dataset from UCI:\n"
+            "     https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset\n"
+            "  2. Extract 'ai4i2020.csv' and place it in:\n"
+            f"     {raw_dir.resolve()}\n"
+            "  3. If deploying to Streamlit Community Cloud, track and commit the file:\n"
+            "     git add -f data/raw/ai4i2020.csv\n"
+            "     git commit -m 'Add AI4I 2020 dataset'\n"
+            "     git push\n"
             "=" * 55 + "\n"
         )
         raise FileNotFoundError(instructions)
@@ -180,9 +255,9 @@ def validate_dataset(df: pd.DataFrame) -> dict:
     return report
 
 
-def load_and_validate(raw_dir: Path = RAW_DIR) -> tuple[pd.DataFrame, dict]:
+def load_and_validate(raw_dir: Path = RAW_DIR, auto_download: bool = True) -> tuple[pd.DataFrame, dict]:
     """Convenience: load the CSV and return (dataframe, validation_report)."""
-    df = load_raw_data(raw_dir)
+    df = load_raw_data(raw_dir, auto_download=auto_download)
     report = validate_dataset(df)
     if not report["valid"]:
         raise ValueError(

@@ -25,6 +25,7 @@ from config.config import (
     MODELS_DIR,
     MODEL_REGISTRY_FILE,
     PRODUCT_TYPE_OPTIONS,
+    ROOT_DIR,
 )
 from src.utils import get_logger, load_json
 
@@ -64,23 +65,97 @@ def load_registry() -> Optional[dict]:
     return None
 
 
+def resolve_model_path(path_or_name: str | Path) -> Path:
+    """
+    Resolve a model path safely across operating systems (Windows and Linux).
+    Handles:
+      - Absolute paths that actually exist on the current host
+      - Legacy absolute Windows paths (e.g. 'C:\\...\\models\\random_forest.joblib')
+        by extracting the filename and looking inside MODELS_DIR
+      - Project-relative paths (e.g. 'models/random_forest.joblib')
+      - Filenames (e.g. 'random_forest.joblib')
+      - Model display names (e.g. 'Random Forest' -> 'models/random_forest.joblib')
+    """
+    if not path_or_name:
+        return MODELS_DIR
+
+    p = Path(path_or_name)
+
+    # 1. If absolute path actually exists on the current host, use it
+    try:
+        if p.is_absolute() and p.exists():
+            return p
+    except Exception:
+        pass
+
+    # 2. Extract filename (handles both Windows and POSIX separators)
+    raw_str = str(path_or_name).replace("\\", "/")
+    filename = Path(raw_str).name
+
+    if filename and (MODELS_DIR / filename).exists():
+        return MODELS_DIR / filename
+
+    # 3. Check relative to ROOT_DIR
+    try:
+        candidate = ROOT_DIR / raw_str
+        if candidate.exists():
+            return candidate
+    except Exception:
+        pass
+
+    # 4. Check relative to MODELS_DIR
+    try:
+        candidate = MODELS_DIR / raw_str
+        if candidate.exists():
+            return candidate
+    except Exception:
+        pass
+
+    # 5. Model display name fallback (e.g. 'Random Forest' -> 'random_forest.joblib')
+    safe_name = str(path_or_name).strip().replace(" ", "_").lower()
+    if not safe_name.endswith(".joblib"):
+        safe_name += ".joblib"
+    candidate = MODELS_DIR / safe_name
+    if candidate.exists():
+        return candidate
+
+    return MODELS_DIR / (filename if filename else safe_name)
+
+
 def list_available_models() -> list[str]:
     """Return list of model names that have saved artifacts."""
     registry = load_registry()
+    known_models = {
+        "Gradient Boosting":   "gradient_boosting.joblib",
+        "Random Forest":       "random_forest.joblib",
+        "SVM":                 "svm.joblib",
+        "Logistic Regression": "logistic_regression.joblib",
+    }
     if registry is None:
-        return []
-    return [
-        name for name, info in registry["models"].items()
-        if Path(info["path"]).exists()
-    ]
+        return [name for name, fname in known_models.items() if (MODELS_DIR / fname).exists()]
+
+    available = []
+    for name, info in registry.get("models", {}).items():
+        raw_path = info.get("path", "")
+        p = resolve_model_path(raw_path)
+        if p.exists():
+            available.append(name)
+        elif (MODELS_DIR / f"{name.replace(' ', '_').lower()}.joblib").exists():
+            available.append(name)
+    return available
 
 
 def get_best_model_name() -> Optional[str]:
     """Return the name of the best model from the registry."""
     registry = load_registry()
-    if registry is None:
+    available = list_available_models()
+    if not available:
         return None
-    return registry.get("best_model")
+    if registry is not None:
+        best = registry.get("best_model")
+        if best in available:
+            return best
+    return available[0]
 
 
 class PredictionService:
@@ -97,43 +172,62 @@ class PredictionService:
         self._model_name: Optional[str] = None
         self._pipeline = None
         self._threshold: float = DEFAULT_THRESHOLD
+        self._load_error: Optional[str] = None
         self._load(model_name)
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
     def _load(self, model_name: Optional[str] = None):
         """Load a pipeline from disk. Falls back to best model if None."""
+        self._load_error = None
+        self._pipeline = None
+        self._model_name = None
+
         registry = load_registry()
-        if registry is None:
-            logger.warning("No model registry found. Train models first.")
-            return
+        name = model_name or get_best_model_name()
 
-        name = model_name or registry.get("best_model")
         if name is None:
-            logger.warning("Registry exists but no best_model entry found.")
+            self._load_error = (
+                "No trained models found. Please ensure model artifacts (*.joblib) "
+                "exist in the 'models/' directory or run 'python scripts/run_pipeline.py'."
+            )
+            logger.warning(self._load_error)
             return
 
-        model_info = registry["models"].get(name)
-        if model_info is None:
-            logger.error("Model '%s' not in registry.", name)
-            return
+        # Determine path
+        model_path = None
+        if registry and name in registry.get("models", {}):
+            raw_path = registry["models"][name].get("path", "")
+            resolved = resolve_model_path(raw_path)
+            if resolved.exists():
+                model_path = resolved
 
-        path = Path(model_info["path"])
-        if not path.exists():
-            logger.error("Model artifact not found: %s", path)
+        if model_path is None or not model_path.exists():
+            resolved = resolve_model_path(name)
+            if resolved.exists():
+                model_path = resolved
+
+        if model_path is None or not model_path.exists():
+            expected_path = MODELS_DIR / f"{name.replace(' ', '_').lower()}.joblib"
+            self._load_error = (
+                f"Model artifact for '{name}' was not found at '{expected_path}'."
+            )
+            logger.error(self._load_error)
             return
 
         try:
-            self._pipeline = joblib.load(path)
+            self._pipeline = joblib.load(model_path)
             self._model_name = name
-            logger.info("Loaded model: %s from %s", name, path)
+            logger.info("Loaded model: %s from %s", name, model_path)
         except Exception as exc:
-            logger.error("Failed to load model artifact: %s", exc)
+            self._load_error = f"Failed to load model artifact from '{model_path}': {exc}"
+            logger.error(self._load_error)
 
     def _check_ready(self):
         if self._pipeline is None:
+            err = getattr(self, "_load_error", None) or "No trained model available."
             raise RuntimeError(
-                "No trained model available. Run 'python scripts/run_pipeline.py' first."
+                f"{err} Please verify model artifacts in 'models/' directory or train models using 'python scripts/run_pipeline.py'."
             )
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -145,6 +239,16 @@ class PredictionService:
     @property
     def is_ready(self) -> bool:
         return self._pipeline is not None
+
+    @property
+    def pipeline(self):
+        """Return the loaded scikit-learn pipeline (or None if not loaded)."""
+        return self._pipeline
+
+    @property
+    def load_error(self) -> Optional[str]:
+        """Return any error message encountered during model loading."""
+        return getattr(self, "_load_error", None)
 
     @property
     def threshold(self) -> float:
@@ -255,6 +359,10 @@ _default_service: Optional[PredictionService] = None
 def get_prediction_service(model_name: Optional[str] = None) -> PredictionService:
     """Return (or create) the module-level singleton PredictionService."""
     global _default_service
-    if _default_service is None or (model_name and model_name != _default_service.model_name):
+    if (
+        _default_service is None
+        or not _default_service.is_ready
+        or (model_name and model_name != _default_service.model_name)
+    ):
         _default_service = PredictionService(model_name)
     return _default_service

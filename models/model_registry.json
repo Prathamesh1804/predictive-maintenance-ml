@@ -6,7 +6,7 @@
   "test_rows": 2000,
   "models": {
     "Logistic Regression": {
-      "path": "C:\\Users\\hp\\Desktop\\ML-mini-project\\models\\logistic_regression.joblib",
+      "path": "models/logistic_regression.joblib",
       "metrics": {
         "model_name": "Logistic Regression",
         "threshold": 0.5,
@@ -6067,7 +6067,7 @@
       }
     },
     "Random Forest": {
-      "path": "C:\\Users\\hp\\Desktop\\ML-mini-project\\models\\random_forest.joblib",
+      "path": "models/random_forest.joblib",
       "metrics": {
         "model_name": "Random Forest",
         "threshold": 0.5,
@@ -12128,7 +12128,7 @@
       }
     },
     "SVM": {
-      "path": "C:\\Users\\hp\\Desktop\\ML-mini-project\\models\\svm.joblib",
+      "path": "models/svm.joblib",
       "metrics": {
         "model_name": "SVM",
         "threshold": 0.5,
@@ -18189,7 +18189,7 @@
       }
     },
     "Gradient Boosting": {
-      "path": "C:\\Users\\hp\\Desktop\\ML-mini-project\\models\\gradient_boosting.joblib",
+      "path": "models/gradient_boosting.joblib",
       "metrics": {
         "model_name": "Gradient Boosting",
         "threshold": 0.5,

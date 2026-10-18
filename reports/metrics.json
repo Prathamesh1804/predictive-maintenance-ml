@@ -1,0 +1,62 @@
+{
+  "generated_at": "2026-10-18T14:45:26.254320",
+  "best_model": "Gradient Boosting",
+  "models": {
+    "Logistic Regression": {
+      "model_name": "Logistic Regression",
+      "threshold": 0.5,
+      "accuracy": 0.8585,
+      "precision": 0.1791044776119403,
+      "recall": 0.8823529411764706,
+      "f1": 0.2977667493796526,
+      "roc_auc": 0.9385047497259774,
+      "pr_auc": 0.4297030345248936,
+      "true_positives": 60,
+      "true_negatives": 1657,
+      "false_positives": 275,
+      "false_negatives": 8
+    },
+    "Random Forest": {
+      "model_name": "Random Forest",
+      "threshold": 0.5,
+      "accuracy": 0.9925,
+      "precision": 0.9491525423728814,
+      "recall": 0.8235294117647058,
+      "f1": 0.8818897637795275,
+      "roc_auc": 0.9839658689562782,
+      "pr_auc": 0.8720171779797206,
+      "true_positives": 56,
+      "true_negatives": 1929,
+      "false_positives": 3,
+      "false_negatives": 12
+    },
+    "SVM": {
+      "model_name": "SVM",
+      "threshold": 0.5,
+      "accuracy": 0.976,
+      "precision": 0.7380952380952381,
+      "recall": 0.45588235294117646,
+      "f1": 0.5636363636363636,
+      "roc_auc": 0.9721181951041287,
+      "pr_auc": 0.6673829238785824,
+      "true_positives": 31,
+      "true_negatives": 1921,
+      "false_positives": 11,
+      "false_negatives": 37
+    },
+    "Gradient Boosting": {
+      "model_name": "Gradient Boosting",
+      "threshold": 0.5,
+      "accuracy": 0.9905,
+      "precision": 0.9152542372881356,
+      "recall": 0.7941176470588235,
+      "f1": 0.8503937007874016,
+      "roc_auc": 0.9735111435878699,
+      "pr_auc": 0.8905662636300369,
+      "true_positives": 54,
+      "true_negatives": 1927,
+      "false_positives": 5,
+      "false_negatives": 14
+    }
+  }
+}

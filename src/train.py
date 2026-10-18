@@ -184,8 +184,10 @@ def train_all_models(raw_dir: Path | None = None) -> dict:
         joblib.dump(pipeline, model_path)
         logger.info("  Saved: %s", model_path)
 
+        # Store relative POSIX path for cross-platform portability
+        rel_path = f"models/{safe_name}.joblib"
         registry["models"][name] = {
-            "path": str(model_path),
+            "path": rel_path,
             "metrics": metrics,
         }
 

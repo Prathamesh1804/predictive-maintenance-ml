@@ -15,20 +15,19 @@ venv/
 env/
 .env/
 
-# Data — never commit raw/processed data
+# Data — keep benchmark dataset for deployment; ignore temporary or processed data
 data/raw/*.csv
+!data/raw/ai4i2020.csv
 data/processed/
 
-# Trained models
-models/*.joblib
-models/*.pkl
-models/model_registry.json
+# Trained models — keep trained artifacts for deployment
+!models/*.joblib
+!models/model_registry.json
 
-# Reports / figures (generated — commit only if intentional)
-reports/figures/
-reports/*.png
-reports/*.json
-reports/*.csv
+# Reports / figures — keep evaluation results for dashboard
+!reports/figures/*.png
+!reports/*.json
+!reports/*.csv
 
 # Environment secrets
 .env
